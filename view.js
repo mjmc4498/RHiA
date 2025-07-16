@@ -5,7 +5,6 @@
 const View = {
     ui: {
         statusMessage: document.getElementById('status-message'),
-        loadingProgress: document.getElementById('loading-progress'),
         fileUpload: document.getElementById('file-upload'),
         documentList: document.getElementById('document-list'),
         userInput: document.getElementById('user-input'),
@@ -19,21 +18,19 @@ const View = {
     },
 
     // --- MÉTODOS DE RENDERIZADO ---
-    updateStatus(message, progress) {
+    updateStatus(message) {
         if (message) {
             this.ui.statusMessage.textContent = message;
         }
-        if (progress !== undefined) {
-            this.ui.loadingProgress.style.width = `${progress}%`;
-        }
     },
 
-    setModelsLoaded(message) {
+    setReadyState(message) {
         this.ui.statusMessage.textContent = message;
         this.ui.statusContainer.classList.replace('bg-blue-100', 'bg-green-100');
         this.ui.statusContainer.classList.replace('text-blue-800', 'text-green-800');
         this.ui.userInput.disabled = false;
-        this.ui.sendButton.disabled = false;
+        // El botón de enviar solo se activa si hay texto
+        this.ui.sendButton.disabled = this.getUserInput().length === 0;
     },
 
     addDocumentToList(fileName) {

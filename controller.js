@@ -4,11 +4,11 @@
 
 const Controller = {
     init: function() {
-        // --- INICIALIZACIÓN DE LA APLICACIÓN ---
         document.addEventListener('DOMContentLoaded', () => {
             this.setFavicon();
             this.bindEventListeners();
-            this.initializeModels();
+            View.setReadyState('Listo para procesar documentos.');
+            View.ui.userInput.disabled = false; // Habilitar explícitamente
         });
     },
 
@@ -19,56 +19,32 @@ const Controller = {
         favicon.setAttribute('href', faviconURL);
     },
 
-    initializeModels: async function() {
-        const result = await Model.initializeModels((progress) => {
-            View.updateStatus(progress.status, progress.progress);
-        });
-
-        if (result.success) {
-            View.setModelsLoaded(result.message);
-        } else {
-            View.updateStatus(result.message);
-        }
-    },
-
-    // --- MANEJO DE EVENTOS ---
     bindEventListeners: function() {
         const ui = View.ui;
-        ui.fileUpload.addEventListener('change', this.handleFileUpload);
-        ui.sendButton.addEventListener('click', this.handleUserQuery);
-
+        ui.fileUpload.addEventListener('change', this.handleFileUpload.bind(this));
+        ui.sendButton.addEventListener('click', this.handleUserQuery.bind(this));
         ui.userInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 this.handleUserQuery();
             }
         });
-
-        View.ui.userInput.addEventListener('input', () => {
-            const el = View.ui.userInput;
+        ui.userInput.addEventListener('input', () => {
+            const el = ui.userInput;
+            // Ajustar altura
             el.style.height = 'auto';
             el.style.height = (el.scrollHeight) + 'px';
+            // Habilitar/deshabilitar botón de envío
+            View.toggleSendButton(el.value.trim().length === 0);
         });
+        ui.chatContainer.addEventListener('click', this.handleChatInteraction.bind(this));
+        ui.exportChatBtn.addEventListener('click', this.handleExportChat.bind(this));
 
-        View.ui.chatContainer.addEventListener('click', this.handleChatInteraction);
-        View.ui.exportChatBtn.addEventListener('click', this.handleExportChat);
-
-        // --- MANEJO DE LA BARRA LATERAL MÓVIL ---
         const sidebar = document.getElementById('sidebar');
         const openSidebarBtn = document.getElementById('open-sidebar-btn');
         const closeSidebarBtn = document.getElementById('close-sidebar-btn');
-
-        if (openSidebarBtn) {
-            openSidebarBtn.addEventListener('click', () => {
-                sidebar.classList.remove('-translate-x-full');
-            });
-        }
-
-        if (closeSidebarBtn) {
-            closeSidebarBtn.addEventListener('click', () => {
-                sidebar.classList.add('-translate-x-full');
-            });
-        }
+        if (openSidebarBtn) openSidebarBtn.addEventListener('click', () => sidebar.classList.remove('-translate-x-full'));
+        if (closeSidebarBtn) closeSidebarBtn.addEventListener('click', () => sidebar.classList.add('-translate-x-full'));
     },
 
     handleFileUpload: async function(event) {
@@ -77,17 +53,20 @@ const Controller = {
 
         View.updateStatus(`Procesando ${files.length} documento(s)...`);
         for (const file of files) {
-            const newDoc = await Model.processAndEmbedFile(file);
+            const newDoc = await Model.processAndVectorizeFile(file);
             if (newDoc) {
                 View.addDocumentToList(newDoc.fileName);
             }
         }
+
+        // Construir el modelo TF-IDF global una vez que todos los archivos han sido procesados
+        Model.buildGlobalModel();
         View.updateStatus('Documentos procesados y listos para la consulta.');
     },
 
     handleUserQuery: async function() {
         const query = View.getUserInput();
-        if (!query || !Model.state.modelReady) return;
+        if (!query) return;
         if (Model.state.knowledgeBase.length === 0) {
             View.appendMessage('Por favor, sube al menos un documento antes de preguntar.', 'bot');
             return;
@@ -98,37 +77,28 @@ const Controller = {
         View.toggleSendButton(true);
         View.appendMessage('...', 'bot', true);
 
-        const relevantChunks = await Model.AI.findTopKRelevantChunks(query);
+        const relevantChunks = Model.Search.findTopKRelevantChunks(query);
+
         if (relevantChunks.length === 0) {
             View.updateBotMessage('No he encontrado información relevante en los documentos para responder a tu pregunta.');
             View.toggleSendButton(false);
             return;
         }
 
-        const context = relevantChunks.map(c => c.chunk).join('\n\n');
-        const answer = await Model.AI.answerQuestion(query, context);
-
+        const answerChunk = relevantChunks[0];
         const stats = Model.updateStats('questions');
         View.updateStats(stats);
 
-        const sourceFile = relevantChunks[0].fileName;
-        const sourceText = relevantChunks[0].chunk;
-
-        // Formatear la respuesta para incluir bloques de código y otras mejoras
-        let formattedAnswer = answer.replace(/```([\s\S]*?)```/g,
-            '<pre class="bg-gray-800 text-white p-3 rounded-md my-2"><code class="font-mono text-sm">$1</code></pre>');
-
         const botResponseHTML = `
             <div class="space-y-4">
-                <div>${formattedAnswer}</div>
+                <div>${this.formatAnswer(answerChunk.chunk)}</div>
                 <div class="p-3 bg-gray-100 dark:bg-rhia-light-gray rounded-lg text-xs text-gray-600 dark:text-gray-400">
-                    <p><strong>Fuente:</strong> ${sourceFile}</p>
-                    <p class="italic mt-1"><strong>Contexto:</strong> "${sourceText}"</p>
+                    <p><strong>Fuente:</strong> ${answerChunk.fileName}</p>
                 </div>
                 <div class="flex items-center gap-2 text-gray-500 dark:text-gray-400">
-                    <button class="copy-btn p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md transition-colors">${View.icons.copy}</button>
-                    <button class="feedback-btn p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md transition-colors" data-feedback="util">${View.icons.thumbUp}</button>
-                    <button class="feedback-btn p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md transition-colors" data-feedback="no-util">${View.icons.thumbDown}</button>
+                    <button class="copy-btn p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md transition-colors" aria-label="Copiar respuesta">${View.icons.copy}</button>
+                    <button class="feedback-btn p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md transition-colors" data-feedback="util" aria-label="Marcar como útil">${View.icons.thumbUp}</button>
+                    <button class="feedback-btn p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md transition-colors" data-feedback="no-util" aria-label="Marcar como no útil">${View.icons.thumbDown}</button>
                 </div>
             </div>
         `;
@@ -136,20 +106,25 @@ const Controller = {
         View.toggleSendButton(false);
     },
 
-    handleChatInteraction: function(event) {
-        const target = event.target;
+    formatAnswer: function(text) {
+        // Escapar HTML para seguridad y luego formatear
+        const escapedText = text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+        return escapedText.replace(/\n/g, '<br>');
+    },
 
-        // Botón de Copiar
+    handleChatInteraction: function(event) {
+        const target = event.target.closest('button');
+        if (!target) return;
+
         if (target.classList.contains('copy-btn')) {
-            const botResponseContainer = target.closest('.bg-gray-200');
-            const answerText = botResponseContainer.querySelector('p').textContent;
+            const botResponseContainer = target.closest('.space-y-4');
+            const answerText = botResponseContainer.querySelector('div:first-child').textContent;
             navigator.clipboard.writeText(answerText).then(() => {
-                target.textContent = '¡Copiado!';
-                setTimeout(() => { target.textContent = 'Copiar'; }, 2000);
+                target.innerHTML = '¡Copiado!';
+                setTimeout(() => { target.innerHTML = View.icons.copy; }, 2000);
             });
         }
 
-        // Botones de Feedback
         if (target.classList.contains('feedback-btn')) {
             const feedback = target.dataset.feedback;
             const stats = Model.updateStats(feedback === 'util' ? 'useful' : 'notUseful');
@@ -160,7 +135,7 @@ const Controller = {
                 btn.disabled = true;
                 btn.classList.add('opacity-50');
             });
-            target.style.backgroundColor = feedback === 'util' ? '#a7f3d0' : '#fecaca';
+            target.classList.add(feedback === 'util' ? 'text-green-500' : 'text-red-500');
         }
     },
 
@@ -168,17 +143,10 @@ const Controller = {
         let chatContent = "Historial de Conversación - Chatbot RRHH\n";
         chatContent += "========================================\n\n";
 
-        View.ui.chatContainer.querySelectorAll('.mb-2').forEach(messageWrapper => {
-            const isUser = messageWrapper.classList.contains('justify-end');
+        View.ui.chatContainer.querySelectorAll('.py-6').forEach(messageWrapper => {
+            const isUser = messageWrapper.querySelector('.bg-gray-600') !== null;
             const sender = isUser ? 'Usuario' : 'Bot';
-            // Clonamos el nodo para no modificar el original
-            const bubbleClone = messageWrapper.querySelector('.rounded-lg').cloneNode(true);
-            // Eliminamos los botones del clon para obtener solo el texto
-            const buttons = bubbleClone.querySelector('.flex.gap-2');
-            if (buttons) {
-                buttons.remove();
-            }
-            const textContent = bubbleClone.textContent.trim();
+            const textContent = messageWrapper.querySelector('.prose').textContent.trim();
             chatContent += `${sender}:\n${textContent}\n\n`;
         });
 
@@ -186,5 +154,4 @@ const Controller = {
     }
 };
 
-// Iniciar la aplicación
 Controller.init();

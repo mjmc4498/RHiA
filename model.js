@@ -1,15 +1,12 @@
 // =================================================================================
-//  MODELO (Manejo de Datos y Estado)
+//  MODELO (Manejo de Datos y Lógica de Búsqueda TF-IDF)
 // =================================================================================
 
 const Model = {
     state: {
-        modelReady: false,
-        knowledgeBase: [], // Almacena los documentos procesados: { fileName, chunks, embeddings }
-        models: {
-            extractor: null,
-            qaModel: null,
-        },
+        knowledgeBase: [], // { fileName, chunks: [string], vectors: [Object] }
+        vocabulary: [],    // Lista de todas las palabras únicas en los documentos
+        idf: {},           // IDF para cada palabra del vocabulario
         stats: {
             questions: 0,
             useful: 0,
@@ -17,55 +14,121 @@ const Model = {
         },
     },
 
-    // --- INICIALIZACIÓN DE MODELOS DE IA ---
-    async initializeModels(progressCallback) {
-        try {
-            const modelsToLoad = [
-                { name: 'sentence-transformers/all-MiniLM-L6-v2', type: 'extractor', label: 'Embeddings' },
-                { name: 'distilbert-base-cased-distilled-squad', type: 'qaModel', label: 'Question-Answering' },
-            ];
+    // --- LÓGICA DE BÚSQUEDA (TF-IDF) ---
 
-            for (const modelInfo of modelsToLoad) {
-                progressCallback({ status: `Cargando modelo de ${modelInfo.label}...` });
-                this.state.models[modelInfo.type] = await AutoModel.load(modelInfo.name, {
-                    progress_callback: (progress) => {
-                        progressCallback({ progress: progress.progress });
-                    },
+    Search: {
+        // Palabras comunes en español a ignorar
+        stopWords: new Set(['de', 'la', 'que', 'el', 'en', 'y', 'a', 'los', 'del', 'se', 'las', 'por', 'un', 'para', 'con', 'no', 'una', 'su', 'al', 'lo', 'como', 'más', 'pero', 'sus', 'le', 'ya', 'o', 'este', 'ha', 'me', 'si', 'sin', 'sobre', 'este', 'entre']),
+
+        // 1. Tokenizar texto: convertir a minúsculas, quitar puntuación y stop words
+        tokenize(text) {
+            return text.toLowerCase()
+                .replace(/[^\w\s]/g, '')
+                .split(/\s+/)
+                .filter(word => word && !this.stopWords.has(word));
+        },
+
+        // 2. Construir el vocabulario y calcular el IDF
+        buildVocabularyAndIDF(chunks) {
+            const docFrequencies = {};
+            const totalDocs = chunks.length;
+
+            chunks.forEach(chunk => {
+                const tokens = new Set(this.tokenize(chunk)); // Usar Set para contar cada palabra una vez por documento
+                tokens.forEach(token => {
+                    docFrequencies[token] = (docFrequencies[token] || 0) + 1;
                 });
-            }
+            });
 
-            this.state.modelReady = true;
-            return { success: true, message: '¡Modelos cargados! Sube documentos para empezar.' };
-        } catch (error) {
-            console.error('Error loading models:', error);
-            return { success: false, message: 'Error fatal al cargar los modelos de IA.' };
-        }
+            Model.state.vocabulary = Object.keys(docFrequencies);
+            Model.state.idf = {};
+            Model.state.vocabulary.forEach(term => {
+                // La fórmula de IDF es log(N / df), donde N es el número total de documentos y df es el número de documentos que contienen el término.
+                Model.state.idf[term] = Math.log(totalDocs / docFrequencies[term]);
+            });
+        },
+
+        // 3. Vectorizar un texto usando TF-IDF
+        vectorize(tokens) {
+            const vector = new Array(Model.state.vocabulary.length).fill(0);
+            const tf = {};
+            const tokenCount = tokens.length;
+
+            // Calcular la frecuencia de término (TF)
+            tokens.forEach(token => {
+                tf[token] = (tf[token] || 0) + 1;
+            });
+
+            // Calcular el vector TF-IDF
+            Model.state.vocabulary.forEach((term, i) => {
+                if (tf[term]) {
+                    const tfValue = tf[term] / tokenCount;
+                    const idfValue = Model.state.idf[term] || 0;
+                    vector[i] = tfValue * idfValue;
+                }
+            });
+            return vector;
+        },
+
+        // 4. Encontrar los chunks más relevantes
+        findTopKRelevantChunks(query, k = 1) {
+            if (Model.state.knowledgeBase.length === 0) return [];
+
+            const queryTokens = this.tokenize(query);
+            const queryVector = this.vectorize(queryTokens);
+
+            const similarities = [];
+            Model.state.knowledgeBase.forEach(doc => {
+                doc.vectors.forEach((docVector, i) => {
+                    const similarity = this.cosineSimilarity(queryVector, docVector);
+                    if (similarity > 0) { // Solo considerar si hay alguna similitud
+                        similarities.push({
+                            chunk: doc.chunks[i],
+                            fileName: doc.fileName,
+                            similarity: similarity,
+                        });
+                    }
+                });
+            });
+
+            similarities.sort((a, b) => b.similarity - a.similarity);
+            return similarities.slice(0, k);
+        },
+
+        cosineSimilarity: (vecA, vecB) => {
+            let dotProduct = 0.0;
+            let normA = 0.0;
+            let normB = 0.0;
+            for (let i = 0; i < vecA.length; i++) {
+                dotProduct += vecA[i] * vecB[i];
+                normA += vecA[i] * vecA[i];
+                normB += vecB[i] * vecB[i];
+            }
+            if (normA === 0 || normB === 0) return 0;
+            return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+        },
     },
 
     // --- PROCESAMIENTO DE ARCHIVOS ---
-    async processAndEmbedFile(file) {
+    async processAndVectorizeFile(file) {
         try {
             let text = '';
             const fileExtension = file.name.split('.').pop().toLowerCase();
 
-            if (fileExtension === 'pdf') {
-                text = await this.FileProcessors.extractPdfText(file);
-            } else if (fileExtension === 'docx') {
-                text = await this.FileProcessors.extractDocxText(file);
-            } else if (fileExtension === 'xlsx') {
-                text = await this.FileProcessors.extractXlsxText(file);
-            } else {
+            if (fileExtension === 'pdf') text = await this.FileProcessors.extractPdfText(file);
+            else if (fileExtension === 'docx') text = await this.FileProcessors.extractDocxText(file);
+            else if (fileExtension === 'xlsx') text = await this.FileProcessors.extractXlsxText(file);
+            else {
                 console.warn(`Formato no soportado: ${file.name}`);
                 return null;
             }
 
-            const chunks = this.TextUtils.chunkText(text, 512, 128);
-            const embeddings = await this.AI.generateEmbeddings(chunks);
+            const chunks = this.TextUtils.chunkText(text, 200, 50); // Chunks más pequeños para TF-IDF
 
             const newDocument = {
                 fileName: file.name,
                 chunks: chunks,
-                embeddings: embeddings,
+                vectors: [], // Se llenará después de construir el vocabulario
             };
             this.state.knowledgeBase.push(newDocument);
             return newDocument;
@@ -73,6 +136,19 @@ const Model = {
         } catch (error) {
             console.error(`Error procesando el archivo ${file.name}:`, error);
             return null;
+        }
+    },
+
+    // Función para construir el modelo TF-IDF global después de cargar todos los archivos
+    buildGlobalModel() {
+        const allChunks = this.state.knowledgeBase.flatMap(doc => doc.chunks);
+        if (allChunks.length > 0) {
+            this.Search.buildVocabularyAndIDF(allChunks);
+
+            // Ahora que tenemos el vocabulario y el IDF, vectorizamos cada chunk
+            this.state.knowledgeBase.forEach(doc => {
+                doc.vectors = doc.chunks.map(chunk => this.Search.vectorize(this.Search.tokenize(chunk)));
+            });
         }
     },
 
@@ -114,49 +190,6 @@ const Model = {
                 i += chunkSize - overlap;
             }
             return chunks;
-        },
-    },
-
-    // --- LÓGICA DE IA: EMBEDDINGS, BÚSQUEDA Y QA ---
-    AI: {
-        generateEmbeddings: async (chunks) => {
-            const embeddings = await Model.state.models.extractor(chunks, { pooling: 'mean', normalize: true });
-            return embeddings.tolist();
-        },
-        findTopKRelevantChunks: async (query, k = 3) => {
-            if (Model.state.knowledgeBase.length === 0) return [];
-
-            const queryEmbedding = await Model.state.models.extractor(query, { pooling: 'mean', normalize: true });
-            const similarities = [];
-
-            for (const doc of Model.state.knowledgeBase) {
-                for (let i = 0; i < doc.chunks.length; i++) {
-                    const chunkEmbedding = doc.embeddings[i];
-                    const similarity = Model.AI.cosineSimilarity(queryEmbedding.data, chunkEmbedding);
-                    similarities.push({
-                        chunk: doc.chunks[i],
-                        fileName: doc.fileName,
-                        similarity: similarity,
-                    });
-                }
-            }
-
-            similarities.sort((a, b) => b.similarity - a.similarity);
-            return similarities.slice(0, k);
-        },
-        cosineSimilarity: (vecA, vecB) => {
-            let dotProduct = 0.0;
-            let normA = 0.0;
-            let normB = 0.0;
-            for (let i = 0; i < vecA.length; i++) {
-                dotProduct += vecA[i] * vecB[i];
-                normB += vecB[i] * vecB[i];
-            }
-            return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
-        },
-        answerQuestion: async (question, context) => {
-            const result = await Model.state.models.qaModel(question, context);
-            return result.answer;
         },
     },
 
