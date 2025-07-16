@@ -42,23 +42,51 @@ const View = {
         this.ui.documentList.appendChild(listItem);
     },
 
+    // --- ICONOS SVG (LUCIDE) ---
+    icons: {
+        user: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-6 h-6"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>`,
+        bot: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-6 h-6 text-rhia-accent"><path d="m12 8-2 4 2 4 2-4-2-4z"></path><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.9 4.9 1.4 1.4"></path><path d="m17.7 17.7 1.4 1.4"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m4.9 19.1 1.4-1.4"></path><path d="m17.7 6.3 1.4-1.4"></path></svg>`,
+        copy: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg>`,
+        thumbUp: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4"><path d="M7 10v12"></path><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h3z"></path></svg>`,
+        thumbDown: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4"><path d="M7 14v-8"></path><path d="M15 22.12 14 18H8.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 10.5 6H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-3z"></path></svg>`,
+    },
+
     appendMessage(html, sender, isThinking = false) {
         const messageWrapper = document.createElement('div');
-        messageWrapper.classList.add('mb-2', 'flex', sender === 'user' ? 'justify-end' : 'justify-start');
+        messageWrapper.classList.add('py-6', 'px-4', 'max-w-3xl', 'mx-auto', 'transition-opacity', 'duration-300', 'opacity-0');
 
-        const messageBubble = document.createElement('div');
-        messageBubble.classList.add('rounded-lg', 'p-2', 'max-w-lg', 'text-sm',
-            sender === 'user' ? 'bg-blue-500 text-white' : 'bg-gray-200 text-gray-800');
+        const content = `
+            <div class="flex items-start space-x-4">
+                <div class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${sender === 'user' ? 'bg-gray-600' : 'bg-white dark:bg-rhia-light-gray'}">
+                    ${sender === 'user' ? this.icons.user : this.icons.bot}
+                </div>
+                <div class="flex-grow prose prose-sm dark:prose-invert max-w-full">
+                    ${html}
+                </div>
+            </div>
+        `;
 
         if (isThinking) {
-            messageBubble.id = 'thinking-indicator';
-            messageBubble.innerHTML = `<div class="flex items-center space-x-1"><div class="w-2 h-2 bg-gray-500 rounded-full animate-pulse"></div><div class="w-2 h-2 bg-gray-500 rounded-full animate-pulse delay-75"></div><div class="w-2 h-2 bg-gray-500 rounded-full animate-pulse delay-150"></div></div>`;
+            messageWrapper.id = 'thinking-indicator';
+            messageWrapper.innerHTML = `
+                <div class="flex items-start space-x-4">
+                    <div class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-white dark:bg-rhia-light-gray">
+                        ${this.icons.bot}
+                    </div>
+                    <div class="pt-1.5 flex items-center space-x-1">
+                        <div class="w-2 h-2 bg-gray-500 rounded-full animate-pulse"></div>
+                        <div class="w-2 h-2 bg-gray-500 rounded-full animate-pulse" style="animation-delay: 0.2s;"></div>
+                        <div class="w-2 h-2 bg-gray-500 rounded-full animate-pulse" style="animation-delay: 0.4s;"></div>
+                    </div>
+                </div>
+            `;
         } else {
-            messageBubble.innerHTML = html;
+            messageWrapper.innerHTML = content;
         }
 
-        messageWrapper.appendChild(messageBubble);
         this.ui.chatContainer.appendChild(messageWrapper);
+        // Trigger the animation
+        setTimeout(() => messageWrapper.classList.remove('opacity-0'), 10);
         this.ui.chatContainer.scrollTop = this.ui.chatContainer.scrollHeight;
     },
 

@@ -6,9 +6,17 @@ const Controller = {
     init: function() {
         // --- INICIALIZACIÓN DE LA APLICACIÓN ---
         document.addEventListener('DOMContentLoaded', () => {
+            this.setFavicon();
             this.bindEventListeners();
             this.initializeModels();
         });
+    },
+
+    setFavicon: function() {
+        const logoSVG = document.getElementById('rhia-logo').outerHTML;
+        const favicon = document.getElementById('favicon');
+        const faviconURL = 'data:image/svg+xml,' + encodeURIComponent(logoSVG);
+        favicon.setAttribute('href', faviconURL);
     },
 
     initializeModels: async function() {
@@ -25,13 +33,42 @@ const Controller = {
 
     // --- MANEJO DE EVENTOS ---
     bindEventListeners: function() {
-        View.ui.fileUpload.addEventListener('change', this.handleFileUpload);
-        View.ui.sendButton.addEventListener('click', this.handleUserQuery);
-        View.ui.userInput.addEventListener('keyup', (e) => {
-            if (e.key === 'Enter') this.handleUserQuery();
+        const ui = View.ui;
+        ui.fileUpload.addEventListener('change', this.handleFileUpload);
+        ui.sendButton.addEventListener('click', this.handleUserQuery);
+
+        ui.userInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                this.handleUserQuery();
+            }
         });
+
+        View.ui.userInput.addEventListener('input', () => {
+            const el = View.ui.userInput;
+            el.style.height = 'auto';
+            el.style.height = (el.scrollHeight) + 'px';
+        });
+
         View.ui.chatContainer.addEventListener('click', this.handleChatInteraction);
         View.ui.exportChatBtn.addEventListener('click', this.handleExportChat);
+
+        // --- MANEJO DE LA BARRA LATERAL MÓVIL ---
+        const sidebar = document.getElementById('sidebar');
+        const openSidebarBtn = document.getElementById('open-sidebar-btn');
+        const closeSidebarBtn = document.getElementById('close-sidebar-btn');
+
+        if (openSidebarBtn) {
+            openSidebarBtn.addEventListener('click', () => {
+                sidebar.classList.remove('-translate-x-full');
+            });
+        }
+
+        if (closeSidebarBtn) {
+            closeSidebarBtn.addEventListener('click', () => {
+                sidebar.classList.add('-translate-x-full');
+            });
+        }
     },
 
     handleFileUpload: async function(event) {
@@ -77,16 +114,22 @@ const Controller = {
         const sourceFile = relevantChunks[0].fileName;
         const sourceText = relevantChunks[0].chunk;
 
+        // Formatear la respuesta para incluir bloques de código y otras mejoras
+        let formattedAnswer = answer.replace(/```([\s\S]*?)```/g,
+            '<pre class="bg-gray-800 text-white p-3 rounded-md my-2"><code class="font-mono text-sm">$1</code></pre>');
+
         const botResponseHTML = `
-            <p>${answer}</p>
-            <div class="mt-2 p-2 bg-gray-100 rounded text-xs">
-                <p><strong>Fuente:</strong> ${sourceFile}</p>
-                <p class="italic"><strong>Contexto:</strong> "${sourceText}"</p>
-            </div>
-            <div class="mt-2 flex gap-2">
-                <button class="copy-btn text-xs bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-1 px-2 rounded">Copiar</button>
-                <button class="feedback-btn text-xs bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-1 px-2 rounded" data-feedback="util">👍</button>
-                <button class="feedback-btn text-xs bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-1 px-2 rounded" data-feedback="no-util">👎</button>
+            <div class="space-y-4">
+                <div>${formattedAnswer}</div>
+                <div class="p-3 bg-gray-100 dark:bg-rhia-light-gray rounded-lg text-xs text-gray-600 dark:text-gray-400">
+                    <p><strong>Fuente:</strong> ${sourceFile}</p>
+                    <p class="italic mt-1"><strong>Contexto:</strong> "${sourceText}"</p>
+                </div>
+                <div class="flex items-center gap-2 text-gray-500 dark:text-gray-400">
+                    <button class="copy-btn p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md transition-colors">${View.icons.copy}</button>
+                    <button class="feedback-btn p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md transition-colors" data-feedback="util">${View.icons.thumbUp}</button>
+                    <button class="feedback-btn p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md transition-colors" data-feedback="no-util">${View.icons.thumbDown}</button>
+                </div>
             </div>
         `;
         View.updateBotMessage(botResponseHTML);
