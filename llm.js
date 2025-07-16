@@ -6,9 +6,8 @@ import { CreateWebWorkerMLCEngine } from "https://cdn.jsdelivr.net/npm/@mlc-ai/w
 
 const LLM = {
     engine: null,
-    selectedModel: "Llama-2-7b-chat-hf-q4f32_1", // Un modelo equilibrado para empezar
+    selectedModel: "Llama-2-7b-chat-hf-q4f32_1",
 
-    // 1. Inicializar el motor de WebLLM
     async init(progressCallback) {
         const initProgressCallback = (report) => {
             progressCallback(report.text, report.progress * 100);
@@ -31,7 +30,6 @@ const LLM = {
         }
     },
 
-    // 2. Generar una respuesta en streaming
     async generate(prompt, streamCallback) {
         if (!this.engine) {
             throw new Error("El motor del LLM no ha sido inicializado.");
@@ -47,10 +45,10 @@ const LLM = {
             const delta = chunk.choices[0]?.delta?.content || "";
             if (delta) {
                 fullResponse += delta;
-                streamCallback(delta); // Enviar cada trozo a la vista
+                streamCallback(delta);
             }
         }
-        return fullResponse; // Devolver la respuesta completa al final
+        return fullResponse;
     }
 };
 

@@ -12,22 +12,19 @@ const Controller = {
 
     init: function() {
         document.addEventListener('DOMContentLoaded', () => {
-            this.bindEventListeners();
             this.setupApplication();
         });
     },
 
-    // 1. Configuración inicial de la aplicación
     setupApplication: async function() {
         this.setFavicon();
+        this.bindEventListeners();
 
-        // Inicializar el LLM y mostrar el progreso
         const llmReady = await LLM.init((status, progress) => {
             View.updateStatus(status, progress);
         });
 
         if (llmReady) {
-            // Configurar la cadena una vez que el LLM esté listo
             const retriever = new Retriever(Model.vectorStore);
             this.chain = new ConversationalRetrievalChain(retriever, LLM);
             View.setReadyState('IA lista. Sube tus documentos para comenzar.');
@@ -62,7 +59,6 @@ const Controller = {
         ui.chatContainer.addEventListener('click', (e) => this.handleChatInteraction(e));
         ui.exportChatBtn.addEventListener('click', () => this.handleExportChat());
 
-        // Manejo de la barra lateral móvil
         const sidebar = document.getElementById('sidebar');
         const openSidebarBtn = document.getElementById('open-sidebar-btn');
         const closeSidebarBtn = document.getElementById('close-sidebar-btn');
@@ -70,7 +66,6 @@ const Controller = {
         if (closeSidebarBtn) closeSidebarBtn.addEventListener('click', () => sidebar.classList.add('-translate-x-full'));
     },
 
-    // 2. Manejar la carga de archivos
     handleFileUpload: async function(event) {
         const files = event.target.files;
         if (files.length === 0) return;
@@ -83,7 +78,6 @@ const Controller = {
         View.updateStatus('Documentos procesados y listos para la consulta.', 100);
     },
 
-    // 3. Manejar la consulta del usuario con la nueva cadena
     handleUserQuery: async function() {
         const query = View.getUserInput();
         if (!query || !this.chain) return;
@@ -97,14 +91,12 @@ const Controller = {
         View.toggleSendButton(true);
 
         const messageId = `bot-response-${Date.now()}`;
-        View.appendMessage('', 'bot', true, messageId); // Crear un contenedor vacío para el streaming
+        View.appendMessage('', 'bot', true, messageId);
 
-        // Llamar a la cadena y pasar el callback de streaming a la Vista
         const result = await this.chain.call({ query }, (token) => {
             View.streamMessage(messageId, token);
         });
 
-        // Actualizar el mensaje final con los botones y las fuentes
         View.finalizeMessage(messageId, result.sources);
 
         const stats = Model.updateStats('questions');

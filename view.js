@@ -35,7 +35,6 @@ const View = {
         this.ui.statusContainer.classList.replace('bg-blue-100', 'bg-green-100');
         this.ui.statusContainer.classList.replace('text-blue-800', 'text-green-800');
         this.ui.userInput.disabled = false;
-        // El botón de enviar solo se activa si hay texto
         this.ui.sendButton.disabled = this.getUserInput().length === 0;
     },
 
@@ -93,7 +92,6 @@ const View = {
         messageWrapper.innerHTML = content;
 
         this.ui.chatContainer.appendChild(messageWrapper);
-        // Trigger the animation
         setTimeout(() => messageWrapper.classList.remove('opacity-0'), 10);
         this.ui.chatContainer.scrollTop = this.ui.chatContainer.scrollHeight;
     },
@@ -108,7 +106,6 @@ const View = {
         }
     },
 
-    // --- MÉTODOS PARA STREAMING DE RESPUESTAS ---
     streamMessage(id, token) {
         const messageBubble = document.getElementById(id);
         if (messageBubble) {
@@ -134,7 +131,7 @@ const View = {
             `;
             const proseContainer = messageBubble.querySelector('.prose');
             proseContainer.insertAdjacentHTML('beforeend', finalHTML);
-            messageBubble.removeAttribute('id'); // Ya no necesitamos identificarlo
+            messageBubble.removeAttribute('id');
         }
     },
 
