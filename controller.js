@@ -3,13 +3,21 @@
 // =================================================================================
 
 const Controller = {
+    chain: null, // Nuestra cadena de recuperación
+
     init: function() {
         document.addEventListener('DOMContentLoaded', () => {
-            this.setFavicon();
+            this.setupChain();
             this.bindEventListeners();
             View.setReadyState('Listo para procesar documentos.');
-            View.ui.userInput.disabled = false; // Habilitar explícitamente
         });
+    },
+
+    // 1. Configurar la cadena de recuperación
+    setupChain: function() {
+        const vectorStore = Model.vectorStore;
+        const retriever = new Retriever(vectorStore);
+        this.chain = new RetrievalChain(retriever);
     },
 
     setFavicon: function() {
@@ -21,9 +29,9 @@ const Controller = {
 
     bindEventListeners: function() {
         const ui = View.ui;
-        ui.fileUploadEmpresa.addEventListener('change', this.handleFileUpload.bind(this));
-        ui.fileUploadGeneral.addEventListener('change', this.handleFileUpload.bind(this));
-        ui.sendButton.addEventListener('click', this.handleUserQuery.bind(this));
+        ui.fileUploadEmpresa.addEventListener('change', (e) => this.handleFileUpload(e));
+        ui.fileUploadGeneral.addEventListener('change', (e) => this.handleFileUpload(e));
+        ui.sendButton.addEventListener('click', () => this.handleUserQuery());
         ui.userInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
@@ -32,14 +40,12 @@ const Controller = {
         });
         ui.userInput.addEventListener('input', () => {
             const el = ui.userInput;
-            // Ajustar altura
             el.style.height = 'auto';
-            el.style.height = (el.scrollHeight) + 'px';
-            // Habilitar/deshabilitar botón de envío
+            el.style.height = `${el.scrollHeight}px`;
             View.toggleSendButton(el.value.trim().length === 0);
         });
-        ui.chatContainer.addEventListener('click', this.handleChatInteraction.bind(this));
-        ui.exportChatBtn.addEventListener('click', this.handleExportChat.bind(this));
+        ui.chatContainer.addEventListener('click', (e) => this.handleChatInteraction(e));
+        ui.exportChatBtn.addEventListener('click', () => this.handleExportChat());
 
         const sidebar = document.getElementById('sidebar');
         const openSidebarBtn = document.getElementById('open-sidebar-btn');
@@ -48,28 +54,25 @@ const Controller = {
         if (closeSidebarBtn) closeSidebarBtn.addEventListener('click', () => sidebar.classList.add('-translate-x-full'));
     },
 
+    // 2. Manejar la carga de archivos y añadirlos al VectorStore
     handleFileUpload: async function(event) {
         const files = event.target.files;
-        const type = event.target.dataset.type;
-        if (files.length === 0 || !type) return;
+        if (files.length === 0) return;
 
-        View.updateStatus(`Procesando ${files.length} documento(s) de tipo '${type}'...`);
-        for (const file of files) {
-            const newDoc = await Model.processAndVectorizeFile(file, type);
-            if (newDoc) {
-                View.addDocumentToList(newDoc.fileName, type);
-            }
-        }
+        View.updateStatus(`Procesando ${files.length} documento(s)...`);
+        const documents = await Model.processFiles(files);
+        this.chain.retriever.vectorStore.addDocuments(documents);
 
-        // Construir el modelo TF-IDF global una vez que todos los archivos han sido procesados
-        Model.buildGlobalModel();
+        // Actualizar la UI
+        Array.from(files).forEach(file => View.addDocumentToList(file.name, event.target.dataset.type));
         View.updateStatus('Documentos procesados y listos para la consulta.');
     },
 
+    // 3. Manejar la consulta del usuario usando la cadena
     handleUserQuery: async function() {
         const query = View.getUserInput();
         if (!query) return;
-        if (Model.state.knowledgeBase.length === 0) {
+        if (this.chain.retriever.vectorStore.documents.length === 0) {
             View.appendMessage('Por favor, sube al menos un documento antes de preguntar.', 'bot');
             return;
         }
@@ -79,26 +82,17 @@ const Controller = {
         View.toggleSendButton(true);
         View.appendMessage('...', 'bot', true);
 
-        const relevantChunks = Model.Search.findTopKRelevantChunks(query, 3);
-
-        if (relevantChunks.length === 0) {
-            View.updateBotMessage('No he encontrado información relevante en los documentos para responder a tu pregunta.');
-            View.toggleSendButton(false);
-            return;
-        }
+        // ¡La magia de la cadena!
+        const result = this.chain.call({ query });
 
         const stats = Model.updateStats('questions');
         View.updateStats(stats);
 
-        // Combinar los chunks en una respuesta más completa
-        const combinedText = relevantChunks.map(c => c.chunk).join("\n\n---\n\n");
-        const sources = [...new Set(relevantChunks.map(c => c.fileName))].join(', ');
-
         const botResponseHTML = `
             <div class="space-y-4">
-                <div>${this.formatAnswer(combinedText)}</div>
+                <div>${this.formatAnswer(result.answer)}</div>
                 <div class="p-3 bg-gray-100 dark:bg-rhia-light-gray rounded-lg text-xs text-gray-600 dark:text-gray-400">
-                    <p><strong>Fuentes consultadas:</strong> ${sources}</p>
+                    <p><strong>Fuentes consultadas:</strong> ${result.sources.join(', ')}</p>
                 </div>
                 <div class="flex items-center gap-2 text-gray-500 dark:text-gray-400">
                     <button class="copy-btn p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md transition-colors" aria-label="Copiar respuesta">${View.icons.copy}</button>
@@ -112,7 +106,6 @@ const Controller = {
     },
 
     formatAnswer: function(text) {
-        // Escapar HTML para seguridad y luego formatear
         const escapedText = text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
         return escapedText.replace(/\n/g, '<br>');
     },

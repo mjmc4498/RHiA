@@ -1,162 +1,128 @@
 // =================================================================================
-//  MODELO (Manejo de Datos y Lógica de Búsqueda TF-IDF)
+//  MODELO (Contiene el VectorStore y los procesadores de archivos)
 // =================================================================================
 
-const Model = {
-    state: {
-        knowledgeBase: {
-            empresa: [], // { fileName, chunks, vectors }
-            general: [], // { fileName, chunks, vectors }
-        },
-        vocabulary: [],    // Vocabulario global
-        idf: {},           // IDF global
-        stats: {
-            questions: 0,
-            useful: 0,
-            notUseful: 0,
-        },
+// --- VectorStore (Inspirado en LangChain) ---
+// Encapsula toda la lógica de almacenamiento, vectorización y búsqueda.
+const VectorStore = {
+    documents: [],     // { pageContent: string, metadata: { source: string } }
+    vocabulary: [],
+    idf: {},
+    vectors: [],
+    stopWords: new Set(['de', 'la', 'que', 'el', 'en', 'y', 'a', 'los', 'del', 'se', 'las', 'por', 'un', 'para', 'con', 'no', 'una', 'su', 'al', 'lo', 'como', 'más', 'pero', 'sus', 'le', 'ya', 'o', 'este', 'ha', 'me', 'si', 'sin', 'sobre', 'este', 'entre']),
+
+    // 1. Añadir documentos y construir el modelo TF-IDF
+    addDocuments(docs) {
+        this.documents.push(...docs);
+        this._buildVocabularyAndIDF();
+        this._generateVectors();
     },
 
-    // --- LÓGICA DE BÚSQUEDA (TF-IDF) ---
+    // 2. Búsqueda de similitud
+    similaritySearch(query, k = 3) {
+        if (this.vectors.length === 0) return [];
 
-    Search: {
-        // Palabras comunes en español a ignorar
-        stopWords: new Set(['de', 'la', 'que', 'el', 'en', 'y', 'a', 'los', 'del', 'se', 'las', 'por', 'un', 'para', 'con', 'no', 'una', 'su', 'al', 'lo', 'como', 'más', 'pero', 'sus', 'le', 'ya', 'o', 'este', 'ha', 'me', 'si', 'sin', 'sobre', 'este', 'entre']),
+        const queryTokens = this._tokenize(query);
+        const queryVector = this._vectorize(queryTokens);
 
-        // 1. Tokenizar texto: convertir a minúsculas, quitar puntuación y stop words
-        tokenize(text) {
-            return text.toLowerCase()
-                .replace(/[^\w\s]/g, '')
-                .split(/\s+/)
-                .filter(word => word && !this.stopWords.has(word));
-        },
+        const similarities = this.vectors.map((docVector, i) => ({
+            document: this.documents[i],
+            similarity: this._cosineSimilarity(queryVector, docVector),
+        }));
 
-        // 2. Construir el vocabulario y calcular el IDF
-        buildVocabularyAndIDF(chunks) {
-            const docFrequencies = {};
-            const totalDocs = chunks.length;
+        return similarities
+            .filter(item => item.similarity > 0.01)
+            .sort((a, b) => b.similarity - a.similarity)
+            .slice(0, k)
+            .map(item => item.document); // Devolver solo los documentos
+    },
 
-            chunks.forEach(chunk => {
-                const tokens = new Set(this.tokenize(chunk)); // Usar Set para contar cada palabra una vez por documento
-                tokens.forEach(token => {
-                    docFrequencies[token] = (docFrequencies[token] || 0) + 1;
-                });
-            });
+    // --- Métodos Privados ---
+    _tokenize(text) {
+        return text.toLowerCase()
+            .replace(/[^\w\s]/g, '')
+            .split(/\s+/)
+            .filter(word => word && !this.stopWords.has(word));
+    },
 
-            Model.state.vocabulary = Object.keys(docFrequencies);
-            Model.state.idf = {};
-            Model.state.vocabulary.forEach(term => {
-                // La fórmula de IDF es log(N / df), donde N es el número total de documentos y df es el número de documentos que contienen el término.
-                Model.state.idf[term] = Math.log(totalDocs / docFrequencies[term]);
-            });
-        },
+    _buildVocabularyAndIDF() {
+        const docFrequencies = {};
+        const totalDocs = this.documents.length;
 
-        // 3. Vectorizar un texto usando TF-IDF
-        vectorize(tokens) {
-            const vector = new Array(Model.state.vocabulary.length).fill(0);
-            const tf = {};
-            const tokenCount = tokens.length;
-
-            // Calcular la frecuencia de término (TF)
+        this.documents.forEach(doc => {
+            const tokens = new Set(this._tokenize(doc.pageContent));
             tokens.forEach(token => {
-                tf[token] = (tf[token] || 0) + 1;
+                docFrequencies[token] = (docFrequencies[token] || 0) + 1;
             });
+        });
 
-            // Calcular el vector TF-IDF
-            Model.state.vocabulary.forEach((term, i) => {
-                if (tf[term]) {
-                    const tfValue = tf[term] / tokenCount;
-                    const idfValue = Model.state.idf[term] || 0;
-                    vector[i] = tfValue * idfValue;
-                }
-            });
-            return vector;
-        },
+        this.vocabulary = Object.keys(docFrequencies);
+        this.idf = {};
+        this.vocabulary.forEach(term => {
+            this.idf[term] = Math.log(totalDocs / (docFrequencies[term] || 1));
+        });
+    },
 
-        // 4. Encontrar los chunks más relevantes
-        findTopKRelevantChunks(query, k = 3) {
-            const allDocs = [...Model.state.knowledgeBase.empresa, ...Model.state.knowledgeBase.general];
-            if (allDocs.length === 0) return [];
+    _vectorize(tokens) {
+        const vector = new Array(this.vocabulary.length).fill(0);
+        const tf = {};
+        const tokenCount = tokens.length;
+        if (tokenCount === 0) return vector;
 
-            const queryTokens = this.tokenize(query);
-            const queryVector = this.vectorize(queryTokens);
+        tokens.forEach(token => tf[token] = (tf[token] || 0) + 1);
 
-            const similarities = [];
-            allDocs.forEach(doc => {
-                doc.vectors.forEach((docVector, i) => {
-                    const similarity = this.cosineSimilarity(queryVector, docVector);
-                    if (similarity > 0.01) { // Aumentar umbral para mejorar relevancia
-                        similarities.push({
-                            chunk: doc.chunks[i],
-                            fileName: doc.fileName,
-                            similarity: similarity,
-                        });
-                    }
-                });
-            });
-
-            similarities.sort((a, b) => b.similarity - a.similarity);
-            return similarities.slice(0, k);
-        },
-
-        cosineSimilarity: (vecA, vecB) => {
-            let dotProduct = 0.0;
-            let normA = 0.0;
-            let normB = 0.0;
-            for (let i = 0; i < vecA.length; i++) {
-                dotProduct += vecA[i] * vecB[i];
-                normA += vecA[i] * vecA[i];
-                normB += vecB[i] * vecB[i];
+        this.vocabulary.forEach((term, i) => {
+            if (tf[term]) {
+                const tfValue = tf[term] / tokenCount;
+                vector[i] = tfValue * (this.idf[term] || 0);
             }
-            if (normA === 0 || normB === 0) return 0;
-            return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
-        },
+        });
+        return vector;
+    },
+
+    _generateVectors() {
+        this.vectors = this.documents.map(doc => this._vectorize(this._tokenize(doc.pageContent)));
+    },
+
+    _cosineSimilarity(vecA, vecB) {
+        let dotProduct = 0.0, normA = 0.0, normB = 0.0;
+        for (let i = 0; i < vecA.length; i++) {
+            dotProduct += vecA[i] * vecB[i];
+            normA += vecA[i] * vecA[i];
+            normB += vecB[i] * vecB[i];
+        }
+        if (normA === 0 || normB === 0) return 0;
+        return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+    },
+};
+
+// --- Modelo Principal ---
+const Model = {
+    vectorStore: VectorStore,
+    state: {
+        stats: { questions: 0, useful: 0, notUseful: 0 },
     },
 
     // --- PROCESAMIENTO DE ARCHIVOS ---
-    async processAndVectorizeFile(file, type) {
-        try {
+    async processFiles(files) {
+        let allChunks = [];
+        for (const file of files) {
             let text = '';
             const fileExtension = file.name.split('.').pop().toLowerCase();
 
             if (fileExtension === 'pdf') text = await this.FileProcessors.extractPdfText(file);
             else if (fileExtension === 'docx') text = await this.FileProcessors.extractDocxText(file);
             else if (fileExtension === 'xlsx') text = await this.FileProcessors.extractXlsxText(file);
-            else {
-                console.warn(`Formato no soportado: ${file.name}`);
-                return null;
-            }
+            else continue;
 
             const chunks = this.TextUtils.chunkText(text, 200, 50);
-
-            const newDocument = {
-                fileName: file.name,
-                chunks: chunks,
-                vectors: [],
-            };
-
-            if (this.state.knowledgeBase[type]) {
-                this.state.knowledgeBase[type].push(newDocument);
-            }
-            return newDocument;
-
-        } catch (error) {
-            console.error(`Error procesando el archivo ${file.name}:`, error);
-            return null;
+            const chunksWithMetadata = chunks.map(chunk => ({
+                pageContent: chunk,
+                metadata: { source: file.name }
+            }));
+            allChunks.push(...chunksWithMetadata);
         }
-    },
-
-    buildGlobalModel() {
-        const allDocs = [...this.state.knowledgeBase.empresa, ...this.state.knowledgeBase.general];
-        const allChunks = allDocs.flatMap(doc => doc.chunks);
-
-        if (allChunks.length > 0) {
-            this.Search.buildVocabularyAndIDF(allChunks);
-
-            allDocs.forEach(doc => {
-                doc.vectors = doc.chunks.map(chunk => this.Search.vectorize(this.Search.tokenize(chunk)));
-            });
-        }
+        return allChunks;
     },
 
     FileProcessors: {
