@@ -21,7 +21,8 @@ const Controller = {
 
     bindEventListeners: function() {
         const ui = View.ui;
-        ui.fileUpload.addEventListener('change', this.handleFileUpload.bind(this));
+        ui.fileUploadEmpresa.addEventListener('change', this.handleFileUpload.bind(this));
+        ui.fileUploadGeneral.addEventListener('change', this.handleFileUpload.bind(this));
         ui.sendButton.addEventListener('click', this.handleUserQuery.bind(this));
         ui.userInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -49,13 +50,14 @@ const Controller = {
 
     handleFileUpload: async function(event) {
         const files = event.target.files;
-        if (files.length === 0) return;
+        const type = event.target.dataset.type;
+        if (files.length === 0 || !type) return;
 
-        View.updateStatus(`Procesando ${files.length} documento(s)...`);
+        View.updateStatus(`Procesando ${files.length} documento(s) de tipo '${type}'...`);
         for (const file of files) {
-            const newDoc = await Model.processAndVectorizeFile(file);
+            const newDoc = await Model.processAndVectorizeFile(file, type);
             if (newDoc) {
-                View.addDocumentToList(newDoc.fileName);
+                View.addDocumentToList(newDoc.fileName, type);
             }
         }
 
@@ -77,7 +79,7 @@ const Controller = {
         View.toggleSendButton(true);
         View.appendMessage('...', 'bot', true);
 
-        const relevantChunks = Model.Search.findTopKRelevantChunks(query);
+        const relevantChunks = Model.Search.findTopKRelevantChunks(query, 3);
 
         if (relevantChunks.length === 0) {
             View.updateBotMessage('No he encontrado información relevante en los documentos para responder a tu pregunta.');
@@ -85,15 +87,18 @@ const Controller = {
             return;
         }
 
-        const answerChunk = relevantChunks[0];
         const stats = Model.updateStats('questions');
         View.updateStats(stats);
 
+        // Combinar los chunks en una respuesta más completa
+        const combinedText = relevantChunks.map(c => c.chunk).join("\n\n---\n\n");
+        const sources = [...new Set(relevantChunks.map(c => c.fileName))].join(', ');
+
         const botResponseHTML = `
             <div class="space-y-4">
-                <div>${this.formatAnswer(answerChunk.chunk)}</div>
+                <div>${this.formatAnswer(combinedText)}</div>
                 <div class="p-3 bg-gray-100 dark:bg-rhia-light-gray rounded-lg text-xs text-gray-600 dark:text-gray-400">
-                    <p><strong>Fuente:</strong> ${answerChunk.fileName}</p>
+                    <p><strong>Fuentes consultadas:</strong> ${sources}</p>
                 </div>
                 <div class="flex items-center gap-2 text-gray-500 dark:text-gray-400">
                     <button class="copy-btn p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md transition-colors" aria-label="Copiar respuesta">${View.icons.copy}</button>

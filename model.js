@@ -4,9 +4,12 @@
 
 const Model = {
     state: {
-        knowledgeBase: [], // { fileName, chunks: [string], vectors: [Object] }
-        vocabulary: [],    // Lista de todas las palabras únicas en los documentos
-        idf: {},           // IDF para cada palabra del vocabulario
+        knowledgeBase: {
+            empresa: [], // { fileName, chunks, vectors }
+            general: [], // { fileName, chunks, vectors }
+        },
+        vocabulary: [],    // Vocabulario global
+        idf: {},           // IDF global
         stats: {
             questions: 0,
             useful: 0,
@@ -71,17 +74,18 @@ const Model = {
         },
 
         // 4. Encontrar los chunks más relevantes
-        findTopKRelevantChunks(query, k = 1) {
-            if (Model.state.knowledgeBase.length === 0) return [];
+        findTopKRelevantChunks(query, k = 3) {
+            const allDocs = [...Model.state.knowledgeBase.empresa, ...Model.state.knowledgeBase.general];
+            if (allDocs.length === 0) return [];
 
             const queryTokens = this.tokenize(query);
             const queryVector = this.vectorize(queryTokens);
 
             const similarities = [];
-            Model.state.knowledgeBase.forEach(doc => {
+            allDocs.forEach(doc => {
                 doc.vectors.forEach((docVector, i) => {
                     const similarity = this.cosineSimilarity(queryVector, docVector);
-                    if (similarity > 0) { // Solo considerar si hay alguna similitud
+                    if (similarity > 0.01) { // Aumentar umbral para mejorar relevancia
                         similarities.push({
                             chunk: doc.chunks[i],
                             fileName: doc.fileName,
@@ -110,7 +114,7 @@ const Model = {
     },
 
     // --- PROCESAMIENTO DE ARCHIVOS ---
-    async processAndVectorizeFile(file) {
+    async processAndVectorizeFile(file, type) {
         try {
             let text = '';
             const fileExtension = file.name.split('.').pop().toLowerCase();
@@ -123,14 +127,17 @@ const Model = {
                 return null;
             }
 
-            const chunks = this.TextUtils.chunkText(text, 200, 50); // Chunks más pequeños para TF-IDF
+            const chunks = this.TextUtils.chunkText(text, 200, 50);
 
             const newDocument = {
                 fileName: file.name,
                 chunks: chunks,
-                vectors: [], // Se llenará después de construir el vocabulario
+                vectors: [],
             };
-            this.state.knowledgeBase.push(newDocument);
+
+            if (this.state.knowledgeBase[type]) {
+                this.state.knowledgeBase[type].push(newDocument);
+            }
             return newDocument;
 
         } catch (error) {
@@ -139,14 +146,14 @@ const Model = {
         }
     },
 
-    // Función para construir el modelo TF-IDF global después de cargar todos los archivos
     buildGlobalModel() {
-        const allChunks = this.state.knowledgeBase.flatMap(doc => doc.chunks);
+        const allDocs = [...this.state.knowledgeBase.empresa, ...this.state.knowledgeBase.general];
+        const allChunks = allDocs.flatMap(doc => doc.chunks);
+
         if (allChunks.length > 0) {
             this.Search.buildVocabularyAndIDF(allChunks);
 
-            // Ahora que tenemos el vocabulario y el IDF, vectorizamos cada chunk
-            this.state.knowledgeBase.forEach(doc => {
+            allDocs.forEach(doc => {
                 doc.vectors = doc.chunks.map(chunk => this.Search.vectorize(this.Search.tokenize(chunk)));
             });
         }

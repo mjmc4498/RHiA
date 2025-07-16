@@ -5,8 +5,10 @@
 const View = {
     ui: {
         statusMessage: document.getElementById('status-message'),
-        fileUpload: document.getElementById('file-upload'),
-        documentList: document.getElementById('document-list'),
+        fileUploadEmpresa: document.getElementById('file-upload-empresa'),
+        fileUploadGeneral: document.getElementById('file-upload-general'),
+        documentListEmpresa: document.getElementById('document-list-empresa'),
+        documentListGeneral: document.getElementById('document-list-general'),
         userInput: document.getElementById('user-input'),
         sendButton: document.getElementById('send-button'),
         chatContainer: document.getElementById('chat-container'),
@@ -33,10 +35,14 @@ const View = {
         this.ui.sendButton.disabled = this.getUserInput().length === 0;
     },
 
-    addDocumentToList(fileName) {
+    addDocumentToList(fileName, type) {
         const listItem = document.createElement('div');
         listItem.textContent = `✓ ${fileName}`;
-        this.ui.documentList.appendChild(listItem);
+        if (type === 'empresa') {
+            this.ui.documentListEmpresa.appendChild(listItem);
+        } else {
+            this.ui.documentListGeneral.appendChild(listItem);
+        }
     },
 
     // --- ICONOS SVG (LUCIDE) ---

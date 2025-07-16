@@ -65,12 +65,20 @@
 
             <div class="flex-grow">
                 <h2 class="text-lg font-semibold mb-2">Base de Conocimiento</h2>
-                <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">Sube documentos (.pdf, .docx, .xlsx) para que el chatbot pueda responder.</p>
-                <label for="file-upload" class="w-full text-center cursor-pointer bg-rhia-accent text-white font-bold py-2 px-4 rounded hover:bg-rhia-accent-hover transition-colors duration-200">
-                    Cargar Documentos
+
+                <!-- Carga de Documentos de Empresa -->
+                <label for="file-upload-empresa" class="w-full text-center cursor-pointer bg-rhia-accent text-white font-bold py-2 px-4 rounded hover:bg-rhia-accent-hover transition-colors duration-200 block">
+                    Cargar Docs. Empresa
                 </label>
-                <input type="file" id="file-upload" multiple class="hidden"/>
-                <div id="document-list" class="mt-4 text-sm space-y-2"></div>
+                <input type="file" id="file-upload-empresa" multiple class="hidden" data-type="empresa"/>
+                <div id="document-list-empresa" class="mt-2 mb-4 text-sm space-y-1"></div>
+
+                <!-- Carga de Conocimiento General -->
+                <label for="file-upload-general" class="w-full text-center cursor-pointer bg-rhia-light-gray text-gray-800 dark:text-white font-bold py-2 px-4 rounded hover:bg-gray-400 dark:hover:bg-gray-600 transition-colors duration-200 block">
+                    Cargar Conoc. General
+                </label>
+                <input type="file" id="file-upload-general" multiple class="hidden" data-type="general"/>
+                <div id="document-list-general" class="mt-2 text-sm space-y-1"></div>
             </div>
 
             <div id="stats-container" class="text-sm">
