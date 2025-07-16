@@ -107,7 +107,10 @@
             <div id="chat-container" class="flex-1 p-6 overflow-y-auto">
                 <!-- Mensajes de bienvenida y estado inicial -->
                 <div id="status-container" class="text-center mb-4 p-2 text-gray-500">
-                    <p id="status-message">Bienvenido a RHiA. Sube tus documentos para comenzar.</p>
+                    <p id="status-message">Inicializando IA... Por favor, espera.</p>
+                    <div class="w-full bg-gray-200 dark:bg-rhia-light-gray rounded-full h-1.5 mt-2 max-w-sm mx-auto">
+                        <div id="loading-progress" class="bg-rhia-accent h-1.5 rounded-full" style="width: 0%"></div>
+                    </div>
                 </div>
             </div>
 
@@ -127,9 +130,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.4.9/mammoth.browser.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.4/xlsx.full.min.js"></script>
-    <script src="model.js"></script>
-    <script src="langchain.js"></script>
-    <script src="view.js"></script>
-    <script src="controller.js"></script>
+
+    <!-- WebLLM y Scripts de la App como Módulos -->
+    <script type="module" src="controller.js"></script>
 </body>
 </html>

@@ -49,3 +49,57 @@ class RetrievalChain {
         };
     }
 }
+
+// --- La Cadena Conversacional con LLM ---
+class ConversationalRetrievalChain {
+    constructor(retriever, llm) {
+        this.retriever = retriever;
+        this.llm = llm;
+    }
+
+    // Construir el prompt para el LLM
+    _createPrompt(context, query) {
+        return `
+            Eres un asistente de Recursos Humanos amable y servicial.
+            Basándote únicamente en el siguiente contexto extraído de los documentos de la empresa, responde a la pregunta del usuario.
+            Si la respuesta no se encuentra en el contexto, di amablemente que no tienes la información.
+            No inventes información.
+
+            Contexto:
+            ---
+            ${context}
+            ---
+
+            Pregunta del usuario:
+            ${query}
+
+            Respuesta:
+        `;
+    }
+
+    // El método principal de la cadena
+    async call(input, streamCallback) {
+        const { query } = input;
+        if (!query) throw new Error("Se requiere una 'query'.");
+
+        // 1. Obtener contexto con el Retriever
+        const relevantDocs = this.retriever.getRelevantDocuments(query);
+        if (relevantDocs.length === 0) {
+            return {
+                answer: 'No he encontrado información relevante en los documentos para responder a tu pregunta.',
+                sources: [],
+            };
+        }
+
+        const context = relevantDocs.map(doc => doc.pageContent).join("\n\n");
+        const sources = [...new Set(relevantDocs.map(doc => doc.metadata.source))];
+
+        // 2. Construir el prompt y generar respuesta con el LLM
+        const prompt = this._createPrompt(context, query);
+        const answer = await this.llm.generate(prompt, streamCallback);
+
+        return { answer, sources };
+    }
+}
+
+export { Retriever, ConversationalRetrievalChain };

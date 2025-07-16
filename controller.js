@@ -1,30 +1,45 @@
+import Model from './model.js';
+import View from './view.js';
+import LLM from './llm.js';
+import { Retriever, ConversationalRetrievalChain } from './langchain.js';
+
 // =================================================================================
 //  CONTROLADOR (Orquestador de la Aplicación)
 // =================================================================================
 
 const Controller = {
-    chain: null, // Nuestra cadena de recuperación
+    chain: null,
 
     init: function() {
         document.addEventListener('DOMContentLoaded', () => {
-            this.setupChain();
             this.bindEventListeners();
-            View.setReadyState('Listo para procesar documentos.');
+            this.setupApplication();
         });
     },
 
-    // 1. Configurar la cadena de recuperación
-    setupChain: function() {
-        const vectorStore = Model.vectorStore;
-        const retriever = new Retriever(vectorStore);
-        this.chain = new RetrievalChain(retriever);
+    // 1. Configuración inicial de la aplicación
+    setupApplication: async function() {
+        this.setFavicon();
+
+        // Inicializar el LLM y mostrar el progreso
+        const llmReady = await LLM.init((status, progress) => {
+            View.updateStatus(status, progress);
+        });
+
+        if (llmReady) {
+            // Configurar la cadena una vez que el LLM esté listo
+            const retriever = new Retriever(Model.vectorStore);
+            this.chain = new ConversationalRetrievalChain(retriever, LLM);
+            View.setReadyState('IA lista. Sube tus documentos para comenzar.');
+        } else {
+            View.setReadyState('Error al cargar la IA. Funcionalidad limitada.');
+        }
     },
 
     setFavicon: function() {
         const logoSVG = document.getElementById('rhia-logo').outerHTML;
         const favicon = document.getElementById('favicon');
-        const faviconURL = 'data:image/svg+xml,' + encodeURIComponent(logoSVG);
-        favicon.setAttribute('href', faviconURL);
+        favicon.setAttribute('href', `data:image/svg+xml,${encodeURIComponent(logoSVG)}`);
     },
 
     bindEventListeners: function() {
@@ -47,6 +62,7 @@ const Controller = {
         ui.chatContainer.addEventListener('click', (e) => this.handleChatInteraction(e));
         ui.exportChatBtn.addEventListener('click', () => this.handleExportChat());
 
+        // Manejo de la barra lateral móvil
         const sidebar = document.getElementById('sidebar');
         const openSidebarBtn = document.getElementById('open-sidebar-btn');
         const closeSidebarBtn = document.getElementById('close-sidebar-btn');
@@ -54,25 +70,24 @@ const Controller = {
         if (closeSidebarBtn) closeSidebarBtn.addEventListener('click', () => sidebar.classList.add('-translate-x-full'));
     },
 
-    // 2. Manejar la carga de archivos y añadirlos al VectorStore
+    // 2. Manejar la carga de archivos
     handleFileUpload: async function(event) {
         const files = event.target.files;
         if (files.length === 0) return;
 
-        View.updateStatus(`Procesando ${files.length} documento(s)...`);
+        View.updateStatus(`Procesando ${files.length} documento(s)...`, 0);
         const documents = await Model.processFiles(files);
-        this.chain.retriever.vectorStore.addDocuments(documents);
+        Model.vectorStore.addDocuments(documents);
 
-        // Actualizar la UI
         Array.from(files).forEach(file => View.addDocumentToList(file.name, event.target.dataset.type));
-        View.updateStatus('Documentos procesados y listos para la consulta.');
+        View.updateStatus('Documentos procesados y listos para la consulta.', 100);
     },
 
-    // 3. Manejar la consulta del usuario usando la cadena
+    // 3. Manejar la consulta del usuario con la nueva cadena
     handleUserQuery: async function() {
         const query = View.getUserInput();
-        if (!query) return;
-        if (this.chain.retriever.vectorStore.documents.length === 0) {
+        if (!query || !this.chain) return;
+        if (Model.vectorStore.documents.length === 0) {
             View.appendMessage('Por favor, sube al menos un documento antes de preguntar.', 'bot');
             return;
         }
@@ -80,34 +95,21 @@ const Controller = {
         View.appendMessage(query, 'user');
         View.clearUserInput();
         View.toggleSendButton(true);
-        View.appendMessage('...', 'bot', true);
 
-        // ¡La magia de la cadena!
-        const result = this.chain.call({ query });
+        const messageId = `bot-response-${Date.now()}`;
+        View.appendMessage('', 'bot', true, messageId); // Crear un contenedor vacío para el streaming
+
+        // Llamar a la cadena y pasar el callback de streaming a la Vista
+        const result = await this.chain.call({ query }, (token) => {
+            View.streamMessage(messageId, token);
+        });
+
+        // Actualizar el mensaje final con los botones y las fuentes
+        View.finalizeMessage(messageId, result.sources);
 
         const stats = Model.updateStats('questions');
         View.updateStats(stats);
-
-        const botResponseHTML = `
-            <div class="space-y-4">
-                <div>${this.formatAnswer(result.answer)}</div>
-                <div class="p-3 bg-gray-100 dark:bg-rhia-light-gray rounded-lg text-xs text-gray-600 dark:text-gray-400">
-                    <p><strong>Fuentes consultadas:</strong> ${result.sources.join(', ')}</p>
-                </div>
-                <div class="flex items-center gap-2 text-gray-500 dark:text-gray-400">
-                    <button class="copy-btn p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md transition-colors" aria-label="Copiar respuesta">${View.icons.copy}</button>
-                    <button class="feedback-btn p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md transition-colors" data-feedback="util" aria-label="Marcar como útil">${View.icons.thumbUp}</button>
-                    <button class="feedback-btn p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md transition-colors" data-feedback="no-util" aria-label="Marcar como no útil">${View.icons.thumbDown}</button>
-                </div>
-            </div>
-        `;
-        View.updateBotMessage(botResponseHTML);
         View.toggleSendButton(false);
-    },
-
-    formatAnswer: function(text) {
-        const escapedText = text.replace(/</g, "&lt;").replace(/>/g, "&gt;");
-        return escapedText.replace(/\n/g, '<br>');
     },
 
     handleChatInteraction: function(event) {
@@ -116,7 +118,7 @@ const Controller = {
 
         if (target.classList.contains('copy-btn')) {
             const botResponseContainer = target.closest('.space-y-4');
-            const answerText = botResponseContainer.querySelector('div:first-child').textContent;
+            const answerText = botResponseContainer.querySelector('.prose > div').textContent;
             navigator.clipboard.writeText(answerText).then(() => {
                 target.innerHTML = '¡Copiado!';
                 setTimeout(() => { target.innerHTML = View.icons.copy; }, 2000);
@@ -125,8 +127,8 @@ const Controller = {
 
         if (target.classList.contains('feedback-btn')) {
             const feedback = target.dataset.feedback;
-            const stats = Model.updateStats(feedback === 'util' ? 'useful' : 'notUseful');
-            View.updateStats(stats);
+            Model.updateStats(feedback === 'util' ? 'useful' : 'notUseful');
+            View.updateStats(Model.state.stats);
 
             const feedbackButtons = target.parentElement.querySelectorAll('.feedback-btn');
             feedbackButtons.forEach(btn => {

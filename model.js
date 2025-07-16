@@ -174,3 +174,5 @@ const Model = {
         return this.state.stats;
     }
 };
+
+export default Model;

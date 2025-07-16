@@ -5,6 +5,7 @@
 const View = {
     ui: {
         statusMessage: document.getElementById('status-message'),
+        loadingProgress: document.getElementById('loading-progress'),
         fileUploadEmpresa: document.getElementById('file-upload-empresa'),
         fileUploadGeneral: document.getElementById('file-upload-general'),
         documentListEmpresa: document.getElementById('document-list-empresa'),
@@ -20,9 +21,12 @@ const View = {
     },
 
     // --- MÉTODOS DE RENDERIZADO ---
-    updateStatus(message) {
+    updateStatus(message, progress) {
         if (message) {
             this.ui.statusMessage.textContent = message;
+        }
+        if (progress !== undefined) {
+            this.ui.loadingProgress.style.width = `${progress}%`;
         }
     },
 
@@ -54,38 +58,39 @@ const View = {
         thumbDown: `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4"><path d="M7 14v-8"></path><path d="M15 22.12 14 18H8.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 10.5 6H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-3z"></path></svg>`,
     },
 
-    appendMessage(html, sender, isThinking = false) {
+    appendMessage(html, sender, isThinking = false, id = null) {
         const messageWrapper = document.createElement('div');
         messageWrapper.classList.add('py-6', 'px-4', 'max-w-3xl', 'mx-auto', 'transition-opacity', 'duration-300', 'opacity-0');
+        if (id) {
+            messageWrapper.id = id;
+        }
 
-        const content = `
-            <div class="flex items-start space-x-4">
-                <div class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${sender === 'user' ? 'bg-gray-600' : 'bg-white dark:bg-rhia-light-gray'}">
-                    ${sender === 'user' ? this.icons.user : this.icons.bot}
-                </div>
-                <div class="flex-grow prose prose-sm dark:prose-invert max-w-full">
-                    ${html}
-                </div>
-            </div>
-        `;
-
+        let content;
         if (isThinking) {
-            messageWrapper.id = 'thinking-indicator';
-            messageWrapper.innerHTML = `
+            content = `
                 <div class="flex items-start space-x-4">
                     <div class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center bg-white dark:bg-rhia-light-gray">
                         ${this.icons.bot}
                     </div>
-                    <div class="pt-1.5 flex items-center space-x-1">
-                        <div class="w-2 h-2 bg-gray-500 rounded-full animate-pulse"></div>
-                        <div class="w-2 h-2 bg-gray-500 rounded-full animate-pulse" style="animation-delay: 0.2s;"></div>
-                        <div class="w-2 h-2 bg-gray-500 rounded-full animate-pulse" style="animation-delay: 0.4s;"></div>
+                    <div class="flex-grow prose prose-sm dark:prose-invert max-w-full">
+                        <div></div>
                     </div>
                 </div>
             `;
         } else {
-            messageWrapper.innerHTML = content;
+            content = `
+                <div class="flex items-start space-x-4">
+                    <div class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center ${sender === 'user' ? 'bg-gray-600' : 'bg-white dark:bg-rhia-light-gray'}">
+                        ${sender === 'user' ? this.icons.user : this.icons.bot}
+                    </div>
+                    <div class="flex-grow prose prose-sm dark:prose-invert max-w-full">
+                        ${html}
+                    </div>
+                </div>
+            `;
         }
+
+        messageWrapper.innerHTML = content;
 
         this.ui.chatContainer.appendChild(messageWrapper);
         // Trigger the animation
@@ -100,6 +105,36 @@ const View = {
             thinkingIndicator.removeAttribute('id');
         } else {
             this.appendMessage(newHTML, 'bot');
+        }
+    },
+
+    // --- MÉTODOS PARA STREAMING DE RESPUESTAS ---
+    streamMessage(id, token) {
+        const messageBubble = document.getElementById(id);
+        if (messageBubble) {
+            const proseContainer = messageBubble.querySelector('.prose > div');
+            if (proseContainer) {
+                proseContainer.innerHTML += token;
+            }
+        }
+    },
+
+    finalizeMessage(id, sources) {
+        const messageBubble = document.getElementById(id);
+        if (messageBubble) {
+            const finalHTML = `
+                <div class="p-3 bg-gray-100 dark:bg-rhia-light-gray rounded-lg text-xs text-gray-600 dark:text-gray-400 mt-4">
+                    <p><strong>Fuentes consultadas:</strong> ${sources.join(', ')}</p>
+                </div>
+                <div class="flex items-center gap-2 text-gray-500 dark:text-gray-400 mt-2">
+                    <button class="copy-btn p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md transition-colors" aria-label="Copiar respuesta">${this.icons.copy}</button>
+                    <button class="feedback-btn p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md transition-colors" data-feedback="util" aria-label="Marcar como útil">${this.icons.thumbUp}</button>
+                    <button class="feedback-btn p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-md transition-colors" data-feedback="no-util" aria-label="Marcar como no útil">${this.icons.thumbDown}</button>
+                </div>
+            `;
+            const proseContainer = messageBubble.querySelector('.prose');
+            proseContainer.insertAdjacentHTML('beforeend', finalHTML);
+            messageBubble.removeAttribute('id'); // Ya no necesitamos identificarlo
         }
     },
 
@@ -133,3 +168,5 @@ const View = {
         URL.revokeObjectURL(url);
     }
 };
+
+export default View;
