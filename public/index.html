@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chatbot RRHH (Cliente)</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.4.9/mammoth.browser.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.17.4/xlsx.full.min.js"></script>
+</head>
+<body class="bg-gray-100 font-sans">
+    <div class="container mx-auto p-4">
+        <h1 class="text-3xl font-bold text-center mb-4 text-gray-800">Chatbot de RRHH</h1>
+
+        <!-- Status and Loading Indicators -->
+        <div id="status-container" class="text-center mb-4 p-2 bg-blue-100 text-blue-800 rounded-lg">
+            <p id="status-message">Cargando modelos de IA... Por favor, espera.</p>
+            <div id="loading-bar" class="w-full bg-gray-200 rounded-full h-2.5 mt-2">
+                <div id="loading-progress" class="bg-blue-600 h-2.5 rounded-full w-0"></div>
+            </div>
+        </div>
+
+        <!-- Document Loading Section -->
+        <div class="bg-white p-4 rounded-lg shadow-md mb-4">
+            <h2 class="text-xl font-semibold mb-2">Base de Conocimiento</h2>
+            <p class="text-gray-600 mb-2">Sube documentos (.pdf, .docx, .xlsx) para que el chatbot pueda responder preguntas sobre ellos.</p>
+            <input type="file" id="file-upload" multiple class="block w-full text-sm text-gray-500
+              file:mr-4 file:py-2 file:px-4
+              file:rounded-full file:border-0
+              file:text-sm file:font-semibold
+              file:bg-violet-50 file:text-violet-700
+              hover:file:bg-violet-100
+            "/>
+            <div id="document-list" class="mt-2 text-sm text-gray-700"></div>
+        </div>
+
+        <!-- Chat Window -->
+        <div id="chat-container" class="bg-white rounded-lg shadow-md p-4 h-96 overflow-y-auto">
+            <!-- Chat messages will appear here -->
+        </div>
+
+        <!-- User Input -->
+        <div class="mt-4 flex">
+            <input type="text" id="user-input" class="flex-grow border rounded-l-lg p-2 focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Escribe tu pregunta aquí..." disabled>
+            <button id="send-button" class="bg-blue-500 text-white rounded-r-lg px-4 hover:bg-blue-600 disabled:bg-gray-400" disabled>Enviar</button>
+        </div>
+
+        <!-- Export and Statistics Section -->
+        <div class="mt-4 p-4 bg-white rounded-lg shadow-md">
+            <h2 class="text-xl font-semibold mb-2">Opciones y Estadísticas</h2>
+            <button id="export-chat-btn" class="bg-teal-500 text-white font-bold py-2 px-4 rounded hover:bg-teal-600">Exportar Chat (.txt)</button>
+            <div id="stats-container" class="mt-2 text-sm text-gray-600">
+                <p>Preguntas respondidas: <span id="stats-questions" class="font-semibold">0</span></p>
+                <p>Feedback útil: <span id="stats-useful" class="font-semibold">0</span></p>
+                <p>Feedback no útil: <span id="stats-not-useful" class="font-semibold">0</span></p>
+            </div>
+        </div>
+    </div>
+    <script src="app.js"></script>
+</body>
+</html>
