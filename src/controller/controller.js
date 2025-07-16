@@ -1,7 +1,7 @@
-import Model from './model.js';
-import View from './view.js';
-import LLM from './llm.js';
-import { Retriever, ConversationalRetrievalChain } from './langchain.js';
+import Model from '../model/model.js';
+import View from '../view/view.js';
+import LLM from '../lib/llm.js';
+import { Retriever, ConversationalRetrievalChain } from '../lib/langchain.js';
 
 // =================================================================================
 //  CONTROLADOR (Orquestador de la Aplicación)
@@ -41,8 +41,7 @@ const Controller = {
 
     bindEventListeners: function() {
         const ui = View.ui;
-        ui.fileUploadEmpresa.addEventListener('change', (e) => this.handleFileUpload(e));
-        ui.fileUploadGeneral.addEventListener('change', (e) => this.handleFileUpload(e));
+        ui.fileUpload.addEventListener('change', (e) => this.handleFileUpload(e));
         ui.sendButton.addEventListener('click', () => this.handleUserQuery());
         ui.userInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -74,7 +73,7 @@ const Controller = {
         const documents = await Model.processFiles(files);
         Model.vectorStore.addDocuments(documents);
 
-        Array.from(files).forEach(file => View.addDocumentToList(file.name, event.target.dataset.type));
+        Array.from(files).forEach(file => View.addDocumentToList(file.name));
         View.updateStatus('Documentos procesados y listos para la consulta.', 100);
     },
 
